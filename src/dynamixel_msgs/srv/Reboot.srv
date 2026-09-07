@@ -1,0 +1,4 @@
+uint8 id            # 0 = All motor
+---
+bool success
+string message

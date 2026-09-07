@@ -1,0 +1,10 @@
+<library path="gripper_controller">
+  <class name="gripper_control/GripperController"
+         type="gripper_control::GripperController"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>
+      Drives the three finger gripper through gripper_servo: trajectory
+      generation, self-collision limiting, current ceilings and a watchdog.
+    </description>
+  </class>
+</library>

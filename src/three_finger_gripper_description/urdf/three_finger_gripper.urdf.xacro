@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="three_finger_gripper">
+
+  <xacro:arg name="prefix" default=""/>
+  <xacro:arg name="use_mock_hardware" default="false"/>
+  <xacro:arg name="port_name" default="/dev/gripper"/>
+
+  <xacro:include filename="$(find three_finger_gripper_description)/urdf/three_finger_gripper_macro.xacro"/>
+  <xacro:include filename="$(find three_finger_gripper_description)/urdf/three_finger_gripper.ros2_control.xacro"/>
+  <xacro:include filename="$(find three_finger_gripper_description)/urdf/palm_sensors.xacro"/>
+
+  <!-- Standalone the gripper hangs off world. Mounted on an arm, include
+       three_finger_gripper_macro.xacro from the arm's description instead and
+       pass the flange link as parent. -->
+  <link name="world"/>
+
+  <xacro:three_finger_gripper prefix="$(arg prefix)" parent="world">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:three_finger_gripper>
+
+  <xacro:palm_sensors prefix="$(arg prefix)"/>
+
+  <xacro:three_finger_gripper_system
+      name="ThreeFingerGripper"
+      prefix="$(arg prefix)"
+      use_mock_hardware="$(arg use_mock_hardware)"
+      port_name="$(arg port_name)"/>
+
+</robot>

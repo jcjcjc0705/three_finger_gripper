@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!--
+    Measured on the physical board, not taken from the CAD.
+
+    The palm mesh has its sensor board mirrored in Y: the model shows the camera
+    on the thumb side, the real one is on the far side. Only the palm visual is
+    affected, because neither the kinematics nor the self-collision model uses
+    that mesh, so the frames below carry the measured values instead of
+    following it. Report the mirroring upstream; patching the mesh here would be
+    overwritten by tools/usd2urdf.py on the next regeneration.
+  -->
+  <xacro:macro name="palm_sensors" params="prefix
+                                           board_z:=0.081
+                                           camera_offset:=-0.0072">
+
+    <!-- TOF sits at the board centre; mirroring does not move it. -->
+    <link name="${prefix}palm_tof"/>
+    <joint name="${prefix}palm_tof_joint" type="fixed">
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}palm_tof"/>
+      <origin xyz="0 0 ${board_z}" rpy="0 0 0"/>
+    </joint>
+
+    <!--
+      Negative Y is away from the thumb. Both frames look along +Z, out of the
+      palm. The camera's roll about Z is left at zero: which way the image is
+      the right way up depends on how the sensor sits in its housing, and that
+      needs one look at an actual frame to pin down.
+    -->
+    <link name="${prefix}palm_camera"/>
+    <joint name="${prefix}palm_camera_joint" type="fixed">
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}palm_camera"/>
+      <origin xyz="0 ${camera_offset} ${board_z}" rpy="0 0 0"/>
+    </joint>
+
+  </xacro:macro>
+
+</robot>

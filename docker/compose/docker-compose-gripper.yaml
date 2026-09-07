@@ -1,0 +1,44 @@
+name: three_finger_gripper
+
+services:
+  gripper:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      target: dev
+      args:
+        ROS_DISTRO: jazzy
+    image: ghcr.io/jcjcjc0705/three_finger_gripper:dev
+    container_name: gripper_ctrl
+
+    stdin_open: true
+    tty: true
+
+    network_mode: host
+    ipc: host
+
+    # controller_manager asks for SCHED_FIFO; without these it warns and falls back.
+    cap_add:
+      - SYS_NICE
+    ulimits:
+      rtprio: 99
+
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+
+    working_dir: /ws
+
+    devices:
+      # Motors. Mapped by serial number so swapping USB ports changes nothing.
+      - /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_FTBEQOTJ-if00-port0:/dev/gripper
+
+    volumes:
+      - ../..:/ws
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+
+    # CONTROLLER=position_controller exposes a plain Float64MultiArray on
+    # /position_controller/commands, which is what dxl_debug and dxl_cli look
+    # for. gripper_controller speaks GripperGoal instead and has no such topic.
+    command: ros2 launch gripper_bringup gripper.launch.py controller:=${CONTROLLER:-gripper_controller}

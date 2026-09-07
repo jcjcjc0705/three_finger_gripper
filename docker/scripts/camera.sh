@@ -1,0 +1,4 @@
+#!/bin/bash
+# usage: camera.sh [up|down|exec|debug|<any docker compose subcommand>]
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/utils.sh"
+main "${1:-up}" "$COMPOSE_DIR/docker-compose-camera.yaml" "${@:2}"

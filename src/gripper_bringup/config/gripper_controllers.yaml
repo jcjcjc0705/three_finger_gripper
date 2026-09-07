@@ -1,0 +1,57 @@
+# Joint order follows the motor numbering (1..8), which is how the mechanism is
+# documented and wired. Anything that publishes commands must match by name,
+# never by index.
+/**:
+  controller_manager:
+    ros__parameters:
+      # Not baud limited: each bus transaction costs 1-2 ms of USB CDC round
+      # trip whatever the line rate, and a cycle makes three of them. Measured
+      # read time is ~11.5 ms, so 100 Hz overruns. The board will not pay this
+      # once it drives the bus directly.
+      update_rate: 50
+
+      # The authoritative limits belong in gripper_servo so they move to the
+      # board with it. The firmware's min/max_position_limit is the backstop.
+      # Enabling this here would also rate limit commands and mask that.
+      enforce_command_limits: false
+
+      joint_state_broadcaster:
+        type: joint_state_broadcaster/JointStateBroadcaster
+
+      position_controller:
+        type: position_controllers/JointGroupPositionController
+
+      gripper_controller:
+        type: gripper_control/GripperController
+
+  position_controller:
+    ros__parameters:
+      joints:
+        - C_2_Joint      # motor 1  thumb  proximal
+        - C_3_Joint      # motor 2  thumb  distal
+        - A_2_Joint      # motor 3  index  proximal
+        - A_3_Joint      # motor 4  index  distal
+        - B_2_Joint      # motor 5  middle proximal
+        - B_3_Joint      # motor 6  middle distal
+        - A_1_Joint      # motor 7  index  spread
+        - B_1_Joint      # motor 8  middle spread
+
+  gripper_controller:
+    ros__parameters:
+      # Joint order and names come from the generated model, not from here.
+      max_velocity: 2.0          # rad/s
+      max_acceleration: 8.0      # rad/s^2
+      watchdog_timeout: 0.5      # s without a goal before it holds
+      # Only used before the first goal arrives, so nothing is being held. Must
+      # still be enough to move an unloaded finger: anything that takes over
+      # inherits this from the motor register.
+      hold_current: 250.0
+      stall_current: 0.9         # fraction of the ceiling that counts as pushing
+      stall_release: 0.5         # and the fraction it has to fall below to let go
+      stall_speed: 0.10          # rad/s, four motor velocity units
+      stall_bias: 0.20           # rad, cap on the error held while stalled
+      stall_time: 0.15           # s of pushing without moving
+
+  # joint_state_broadcaster is left unfiltered on purpose: with no 'joints' it
+  # publishes every state interface, which is what puts temperature, voltage,
+  # current and error on /dynamic_joint_states.

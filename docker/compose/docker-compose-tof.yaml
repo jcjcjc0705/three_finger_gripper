@@ -1,0 +1,43 @@
+name: three_finger_gripper
+
+services:
+  tof:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      target: dev
+      args:
+        ROS_DISTRO: jazzy
+    image: ghcr.io/jcjcjc0705/three_finger_gripper:dev
+    container_name: gripper_tof
+
+    stdin_open: true
+    tty: true
+
+    network_mode: host
+    ipc: host
+
+    # controller_manager asks for SCHED_FIFO; without these it warns and falls back.
+    cap_add:
+      - SYS_NICE
+    ulimits:
+      rtprio: 99
+
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+
+    working_dir: /ws
+
+    devices:
+      - /dev/serial/by-id/usb-Seeed_Seeed_XIAO_M0_69B3168850583833312E3120FF05291D-if00:/dev/tof
+
+    volumes:
+      - ../..:/ws
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+
+    command: >
+      ros2 run gripper_sensors tof_node --ros-args
+      -p port:=/dev/tof
+      -p frame_id:=palm_tof

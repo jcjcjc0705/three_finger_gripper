@@ -1,0 +1,7 @@
+uint8 id
+uint16 address
+uint8 size          # 1 / 2 / 4 bytes
+---
+bool success
+int64 value
+string message

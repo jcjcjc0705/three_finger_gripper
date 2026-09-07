@@ -1,0 +1,257 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!--/dynamic_joint_states-->
+  <xacro:macro name="dxl_x_states">
+    <state_interface name="position"/>       <!-- rad -->
+    <state_interface name="velocity"/>       <!-- rad/s -->
+    <state_interface name="effort"/>         <!-- N·m, unpopulated -->
+    <state_interface name="current"/>        <!-- Present Current, raw units -->
+    <state_interface name="temperature"/>    <!-- °C -->
+    <state_interface name="voltage"/>        <!-- V -->
+    <state_interface name="pwm"/>            <!-- % -->
+    <state_interface name="error"/>          <!-- Hardware Error Status -->
+    <state_interface name="moving"/>         <!-- 0 / 1 -->
+    <state_interface name="homing_offset"/>  <!-- rad -->
+  </xacro:macro>
+
+  <!--limits(selection)-->
+  <xacro:macro name="dxl_x_limits"
+               params="model:='' homing_offset:=''
+                       min_position_limit:='' max_position_limit:=''
+                       temperature_limit:=''
+                       max_voltage_limit:='' min_voltage_limit:=''
+                       shutdown:=''">
+    <xacro:unless value="${model == ''}">
+      <param name="model">${model}</param>
+    </xacro:unless>
+    <xacro:unless value="${homing_offset == ''}">
+      <param name="homing_offset">${homing_offset}</param>
+    </xacro:unless>
+    <xacro:unless value="${min_position_limit == ''}">
+      <param name="min_position_limit">${min_position_limit}</param>
+    </xacro:unless>
+    <xacro:unless value="${max_position_limit == ''}">
+      <param name="max_position_limit">${max_position_limit}</param>
+    </xacro:unless>
+    <xacro:unless value="${temperature_limit == ''}">
+      <param name="temperature_limit">${temperature_limit}</param>
+    </xacro:unless>
+    <xacro:unless value="${max_voltage_limit == ''}">
+      <param name="max_voltage_limit">${max_voltage_limit}</param>
+    </xacro:unless>
+    <xacro:unless value="${min_voltage_limit == ''}">
+      <param name="min_voltage_limit">${min_voltage_limit}</param>
+    </xacro:unless>
+    <xacro:unless value="${shutdown == ''}">
+      <param name="shutdown">${shutdown}</param>
+    </xacro:unless>
+  </xacro:macro>
+
+  <!--parameters in position mode-->
+  <xacro:macro name="dxl_x_common_params"
+               params="drive_mode profile_velocity profile_acceleration
+                       position_p_gain position_i_gain position_d_gain">
+    <param name="drive_mode">${drive_mode}</param>
+    <param name="profile_velocity">${profile_velocity}</param>
+    <param name="profile_acceleration">${profile_acceleration}</param>
+    <param name="position_p_gain">${position_p_gain}</param>
+    <param name="position_i_gain">${position_i_gain}</param>
+    <param name="position_d_gain">${position_d_gain}</param>
+  </xacro:macro>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       operating_mode:
+         position
+         extended_position
+       ═══════════════════════════════════════════════════════════════════ -->
+  <xacro:macro name="dxl_x_position_joint"
+               params="joint_name device_id direction:=1
+                       operating_mode:=position
+                       drive_mode:=4
+                       profile_velocity:=50 profile_acceleration:=25
+                       position_p_gain:=1000 position_i_gain:=0 position_d_gain:=1000
+                       model:='' homing_offset:=''
+                       min_position_limit:='' max_position_limit:=''
+                       temperature_limit:=''
+                       max_voltage_limit:='' min_voltage_limit:=''
+                       shutdown:='' velocity_limit:='' current_limit:=''">
+    <joint name="${joint_name}">
+      <param name="device_id">${device_id}</param>
+      <!-- -1 when the motor turns the other way to the URDF joint -->
+      <param name="direction">${direction}</param>
+      <param name="operating_mode">${operating_mode}</param>
+      <xacro:dxl_x_common_params
+          drive_mode="${drive_mode}"
+          profile_velocity="${profile_velocity}"
+          profile_acceleration="${profile_acceleration}"
+          position_p_gain="${position_p_gain}"
+          position_i_gain="${position_i_gain}"
+          position_d_gain="${position_d_gain}"/>
+      <xacro:dxl_x_limits
+          model="${model}" homing_offset="${homing_offset}"
+          min_position_limit="${min_position_limit}" max_position_limit="${max_position_limit}"
+          temperature_limit="${temperature_limit}"
+          max_voltage_limit="${max_voltage_limit}" min_voltage_limit="${min_voltage_limit}"
+          shutdown="${shutdown}"/>
+      <xacro:unless value="${velocity_limit == ''}">
+        <param name="velocity_limit">${velocity_limit}</param>
+      </xacro:unless>
+      <xacro:unless value="${current_limit == ''}">
+        <param name="current_limit">${current_limit}</param>
+      </xacro:unless>
+
+      <command_interface name="position"/>
+      <xacro:dxl_x_states/>
+    </joint>
+  </xacro:macro>
+
+  <!--operating_mode = current_based_position-->
+  <xacro:macro name="dxl_x_current_position_joint"
+               params="joint_name device_id direction:=1 current_limit goal_current:=''
+                       drive_mode:=4
+                       profile_velocity:=50 profile_acceleration:=25
+                       position_p_gain:=1000 position_i_gain:=0 position_d_gain:=1000
+                       model:='' homing_offset:=''
+                       min_position_limit:='' max_position_limit:=''
+                       temperature_limit:=''
+                       max_voltage_limit:='' min_voltage_limit:=''
+                       shutdown:=21 velocity_limit:=''">
+    <joint name="${joint_name}">
+      <param name="device_id">${device_id}</param>
+      <!-- -1 when the motor turns the other way to the URDF joint -->
+      <param name="direction">${direction}</param>
+      <param name="operating_mode">current_based_position</param>
+      <param name="current_limit">${current_limit}</param>
+      <xacro:dxl_x_common_params
+          drive_mode="${drive_mode}"
+          profile_velocity="${profile_velocity}"
+          profile_acceleration="${profile_acceleration}"
+          position_p_gain="${position_p_gain}"
+          position_i_gain="${position_i_gain}"
+          position_d_gain="${position_d_gain}"/>
+      <xacro:dxl_x_limits
+          model="${model}" homing_offset="${homing_offset}"
+          min_position_limit="${min_position_limit}" max_position_limit="${max_position_limit}"
+          temperature_limit="${temperature_limit}"
+          max_voltage_limit="${max_voltage_limit}" min_voltage_limit="${min_voltage_limit}"
+          shutdown="${shutdown}"/>
+      <xacro:unless value="${velocity_limit == ''}">
+        <param name="velocity_limit">${velocity_limit}</param>
+      </xacro:unless>
+            <xacro:unless value="${goal_current == ''}">
+        <param name="goal_current">${goal_current}</param>
+      </xacro:unless>
+
+      <command_interface name="position"/>
+      <!-- Goal Current ceiling. The driver only puts it on the bus when the
+           value changes, so a controller may write it every cycle. -->
+      <command_interface name="effort"/>
+      <xacro:dxl_x_states/>
+    </joint>
+  </xacro:macro>
+
+  <!--operating_mode = velocity-->
+  <xacro:macro name="dxl_x_velocity_joint"
+               params="joint_name device_id
+                       velocity_limit:=''
+                       profile_acceleration:=25
+                       velocity_p_gain:=100 velocity_i_gain:=1920
+                       model:='' homing_offset:=''
+                       temperature_limit:=''
+                       max_voltage_limit:='' min_voltage_limit:=''
+                       shutdown:='' current_limit:=''">
+    <joint name="${joint_name}">
+      <param name="device_id">${device_id}</param>
+      <param name="operating_mode">velocity</param>
+      <param name="profile_acceleration">${profile_acceleration}</param>
+      <param name="velocity_p_gain">${velocity_p_gain}</param>
+      <param name="velocity_i_gain">${velocity_i_gain}</param>
+      <xacro:unless value="${velocity_limit == ''}">
+        <param name="velocity_limit">${velocity_limit}</param>
+      </xacro:unless>
+      <xacro:unless value="${current_limit == ''}">
+        <param name="current_limit">${current_limit}</param>
+      </xacro:unless>
+      <xacro:dxl_x_limits
+          model="${model}" homing_offset="${homing_offset}"
+          temperature_limit="${temperature_limit}"
+          max_voltage_limit="${max_voltage_limit}" min_voltage_limit="${min_voltage_limit}"
+          shutdown="${shutdown}"/>
+
+      <command_interface name="velocity"/>
+      <xacro:dxl_x_states/>
+    </joint>
+  </xacro:macro>
+
+  <!--operating_mode = current-->
+  <xacro:macro name="dxl_x_current_joint"
+               params="joint_name device_id current_limit
+                       model:='' homing_offset:=''
+                       temperature_limit:=''
+                       max_voltage_limit:='' min_voltage_limit:=''
+                       shutdown:=''">
+    <joint name="${joint_name}">
+      <param name="device_id">${device_id}</param>
+      <param name="operating_mode">current</param>
+      <param name="current_limit">${current_limit}</param>
+      <xacro:dxl_x_limits
+          model="${model}" homing_offset="${homing_offset}"
+          temperature_limit="${temperature_limit}"
+          max_voltage_limit="${max_voltage_limit}" min_voltage_limit="${min_voltage_limit}"
+          shutdown="${shutdown}"/>
+
+      <command_interface name="effort"/>
+      <xacro:dxl_x_states/>
+    </joint>
+  </xacro:macro>
+
+  <!--operating_mode = pwm-->
+  <xacro:macro name="dxl_x_pwm_joint"
+               params="joint_name device_id pwm_limit:=''
+                       model:='' homing_offset:=''
+                       temperature_limit:=''
+                       max_voltage_limit:='' min_voltage_limit:=''
+                       shutdown:=''">
+    <joint name="${joint_name}">
+      <param name="device_id">${device_id}</param>
+      <param name="operating_mode">pwm</param>
+      <xacro:unless value="${pwm_limit == ''}">
+        <param name="pwm_limit">${pwm_limit}</param>
+      </xacro:unless>
+      <xacro:dxl_x_limits
+          model="${model}" homing_offset="${homing_offset}"
+          temperature_limit="${temperature_limit}"
+          max_voltage_limit="${max_voltage_limit}" min_voltage_limit="${min_voltage_limit}"
+          shutdown="${shutdown}"/>
+
+      <command_interface name="pwm"/>
+      <xacro:dxl_x_states/>
+    </joint>
+  </xacro:macro>
+
+  <!--readonly joint-->
+  <xacro:macro name="dxl_x_readonly_joint"
+               params="joint_name device_id
+                       operating_mode:=position
+                       drive_mode:=4
+                       model:='' homing_offset:=''
+                       temperature_limit:=''
+                       max_voltage_limit:='' min_voltage_limit:=''
+                       shutdown:=''">
+    <joint name="${joint_name}">
+      <param name="device_id">${device_id}</param>
+      <param name="operating_mode">${operating_mode}</param>
+      <param name="drive_mode">${drive_mode}</param>
+      <param name="torque_enable">false</param>
+      <xacro:dxl_x_limits
+          model="${model}" homing_offset="${homing_offset}"
+          temperature_limit="${temperature_limit}"
+          max_voltage_limit="${max_voltage_limit}" min_voltage_limit="${min_voltage_limit}"
+          shutdown="${shutdown}"/>
+
+      <xacro:dxl_x_states/>
+    </joint>
+  </xacro:macro>
+
+</robot>

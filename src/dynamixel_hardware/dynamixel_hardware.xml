@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<library path="dynamixel_system">
+  <class name="dynamixel_hardware/DynamixelSystem"
+         type="dynamixel_hardware::DynamixelSystem"
+         base_class_type="hardware_interface::SystemInterface">
+  </class>
+</library>

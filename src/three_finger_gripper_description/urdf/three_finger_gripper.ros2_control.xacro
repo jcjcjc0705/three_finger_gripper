@@ -1,0 +1,86 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find three_finger_gripper_description)/urdf/dxl_x_series.xacro"/>
+
+  <!-- Firmware position limits, derived from the same angles as the URDF
+       <limit> tags so the two cannot drift apart. This is the last line of
+       mechanical protection, below anything the software does. -->
+  <xacro:macro name="deg_to_tick" params="deg">${int(2048 + radians(deg) * 4096 / (2 * pi))}</xacro:macro>
+
+  <xacro:macro name="three_finger_gripper_system"
+               params="name prefix use_mock_hardware port_name baud_rate:=1000000
+                       current_limit:=800 flex_current:=350 spread_current:=250">
+    <ros2_control name="${name}" type="system">
+
+      <hardware>
+        <xacro:if value="${use_mock_hardware}">
+          <plugin>mock_components/GenericSystem</plugin>
+          <param name="calculate_dynamics">true</param>
+        </xacro:if>
+        <xacro:unless value="${use_mock_hardware}">
+          <plugin>dynamixel_hardware/DynamixelSystem</plugin>
+          <param name="port_name">${port_name}</param>
+          <param name="baud_rate">${baud_rate}</param>
+        </xacro:unless>
+      </hardware>
+
+      <!-- All eight run current_based_position: position control with a torque
+           ceiling. On the flexion joints that is what makes contact safe; on
+           the spread joints it protects the mechanism when two fingers meet. -->
+
+      <!-- motor 1  thumb proximal -->
+      <xacro:dxl_x_current_position_joint
+          joint_name="${prefix}C_2_Joint" device_id="1"
+          current_limit="${current_limit}" goal_current="${flex_current}"
+          min_position_limit="${int(2048 + radians(-12.7) * 4096 / (2 * pi))}"
+          max_position_limit="${int(2048 + radians(72.2) * 4096 / (2 * pi))}"/>
+      <!-- motor 2  thumb distal -->
+      <xacro:dxl_x_current_position_joint
+          joint_name="${prefix}C_3_Joint" device_id="2"
+          current_limit="${current_limit}" goal_current="${flex_current}"
+          min_position_limit="${int(2048 + radians(-120.0) * 4096 / (2 * pi))}"
+          max_position_limit="${int(2048 + radians(36.9) * 4096 / (2 * pi))}"/>
+      <!-- motor 3  index proximal -->
+      <xacro:dxl_x_current_position_joint
+          joint_name="${prefix}A_2_Joint" device_id="3"
+          current_limit="${current_limit}" goal_current="${flex_current}"
+          min_position_limit="${int(2048 + radians(-28.6) * 4096 / (2 * pi))}"
+          max_position_limit="${int(2048 + radians(70.9) * 4096 / (2 * pi))}"/>
+      <!-- motor 4  index distal -->
+      <xacro:dxl_x_current_position_joint
+          joint_name="${prefix}A_3_Joint" device_id="4"
+          current_limit="${current_limit}" goal_current="${flex_current}"
+          min_position_limit="${int(2048 + radians(-120.0) * 4096 / (2 * pi))}"
+          max_position_limit="${int(2048 + radians(36.9) * 4096 / (2 * pi))}"/>
+      <!-- motor 5  middle proximal -->
+      <xacro:dxl_x_current_position_joint
+          joint_name="${prefix}B_2_Joint" device_id="5"
+          current_limit="${current_limit}" goal_current="${flex_current}"
+          min_position_limit="${int(2048 + radians(-28.6) * 4096 / (2 * pi))}"
+          max_position_limit="${int(2048 + radians(70.9) * 4096 / (2 * pi))}"/>
+      <!-- motor 6  middle distal -->
+      <xacro:dxl_x_current_position_joint
+          joint_name="${prefix}B_3_Joint" device_id="6"
+          current_limit="${current_limit}" goal_current="${flex_current}"
+          min_position_limit="${int(2048 + radians(-120.0) * 4096 / (2 * pi))}"
+          max_position_limit="${int(2048 + radians(36.9) * 4096 / (2 * pi))}"/>
+      <!-- motor 7  index spread. Both spread motors are mounted so their
+           positive rotation is the URDF joint's negative one, confirmed on
+           hardware; direction keeps the description faithful to the CAD. -->
+      <xacro:dxl_x_current_position_joint
+          joint_name="${prefix}A_1_Joint" direction="-1" device_id="7"
+          current_limit="${current_limit}" goal_current="${spread_current}"
+          min_position_limit="${int(2048 + radians(-90.0) * 4096 / (2 * pi))}"
+          max_position_limit="${int(2048 + radians(90.0) * 4096 / (2 * pi))}"/>
+      <!-- motor 8  middle spread -->
+      <xacro:dxl_x_current_position_joint
+          joint_name="${prefix}B_1_Joint" direction="-1" device_id="8"
+          current_limit="${current_limit}" goal_current="${spread_current}"
+          min_position_limit="${int(2048 + radians(-90.0) * 4096 / (2 * pi))}"
+          max_position_limit="${int(2048 + radians(90.0) * 4096 / (2 * pi))}"/>
+
+    </ros2_control>
+  </xacro:macro>
+
+</robot>

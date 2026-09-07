@@ -1,0 +1,41 @@
+name: three_finger_gripper
+
+services:
+  foxglove:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      target: dev
+      args:
+        ROS_DISTRO: jazzy
+    image: ghcr.io/jcjcjc0705/three_finger_gripper:dev
+    container_name: gripper_foxglove
+
+    stdin_open: true
+    tty: true
+
+    network_mode: host
+    ipc: host
+
+    # controller_manager asks for SCHED_FIFO; without these it warns and falls back.
+    cap_add:
+      - SYS_NICE
+    ulimits:
+      rtprio: 99
+
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+
+    working_dir: /ws
+
+    volumes:
+      - ../..:/ws
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+
+    # asset_uri_allowlist lets the 3D panel resolve the package:// mesh paths.
+    command: >
+      ros2 run foxglove_bridge foxglove_bridge --ros-args
+      -p port:=8765
+      -p asset_uri_allowlist:=['^package://(?!.*\.\.).*']

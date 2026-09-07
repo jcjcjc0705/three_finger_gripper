@@ -1,0 +1,13 @@
+# Everything at once. The services are not redefined here: they are included
+# from the single-service files, so there is one definition of each and no way
+# for them to drift apart.
+#
+# Do not run this alongside the individual scripts -- both would try to create
+# the same container names.
+name: three_finger_gripper
+
+include:
+  - docker-compose-gripper.yaml
+  - docker-compose-camera.yaml
+  - docker-compose-tof.yaml
+  - docker-compose-foxglovebridge.yaml
