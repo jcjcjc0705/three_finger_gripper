@@ -13,13 +13,13 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='ubuntu',
-    maintainer_email='ubuntu@todo.todo',
-    description='Decision layer for the three finger gripper',
-    license='TODO: License declaration',
+    maintainer='jcjcjc0705',
+    maintainer_email='jimmy910705@gmail.com',
+    description='Watch and drive the grasps running on the board',
+    license='Proprietary',
     entry_points={
         'console_scripts': [
-            'grasp_pilot = gripper_grasp.grasp_pilot:main',
+            'grasp_tui = gripper_grasp.grasp_tui:main',
         ],
     },
 )

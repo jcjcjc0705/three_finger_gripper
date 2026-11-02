@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Palm camera, TOF and the Foxglove bridge.
+"""Palm camera from the board, and the Foxglove bridge.
+
+The TOF has no node here: uros_node publishes /tof/range over micro-ROS.
 
     ros2 launch gripper_bringup sensors.launch.py
 """
@@ -14,33 +16,30 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     declared_arguments = [
-        DeclareLaunchArgument('camera_device', default_value='/dev/palm_cam'),
-        DeclareLaunchArgument('tof_port', default_value='/dev/tof'),
-        DeclareLaunchArgument('camera', default_value='true'),
-        DeclareLaunchArgument('tof', default_value='true'),
+        DeclareLaunchArgument('board_host', default_value='192.168.0.3'),
+        DeclareLaunchArgument('board_port', default_value='9000'),
         DeclareLaunchArgument('foxglove', default_value='true'),
         DeclareLaunchArgument('foxglove_port', default_value='8765'),
     ]
 
     nodes = [
         Node(
-            package='v4l2_camera', executable='v4l2_camera_node',
-            name='palm_camera', namespace='palm_camera', output='both',
-            condition=IfCondition(LaunchConfiguration('camera')),
+            package='gripper_sensors', executable='palm_stream',
+            name='palm_stream', output='both',
             parameters=[{
-                'video_device': ParameterValue(
-                    LaunchConfiguration('camera_device'), value_type=str),
-                'camera_frame_id': 'palm_camera',
+                'host': ParameterValue(LaunchConfiguration('board_host'), value_type=str),
+                'port': ParameterValue(LaunchConfiguration('board_port'), value_type=int),
             }],
         ),
+        # The board sends JPEG. This is the same camera decoded, for anything wanting raw images.
         Node(
-            package='gripper_sensors', executable='tof_node',
-            name='palm_tof', output='both',
-            condition=IfCondition(LaunchConfiguration('tof')),
-            parameters=[{
-                'port': ParameterValue(LaunchConfiguration('tof_port'), value_type=str),
-                'frame_id': 'palm_tof',
-            }],
+            package='image_transport', executable='republish',
+            name='palm_camera_decompress', output='both',
+            parameters=[{'in_transport': 'compressed', 'out_transport': 'raw'}],
+            remappings=[
+                ('in/compressed', '/palm_camera/image_raw/compressed'),
+                ('out', '/palm_camera/image_raw'),
+            ],
         ),
         Node(
             package='foxglove_bridge', executable='foxglove_bridge',

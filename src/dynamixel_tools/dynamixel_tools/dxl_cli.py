@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Command-line front end for the dynamixel_hardware services.
+"""Command-line front end for the motors, through board_bridge.
 
-Requires a running ros2_control stack -- it talks to the plugin's services,
-it does not open the serial port itself. For rescue work while the stack is
-stopped, use the offline tool instead.
+It talks to the bridge's services and does not open the serial port itself. For rescue
+work while uros_node is not running, use dxl_offline on the board instead.
 
-    ros2 run dynamixel_tools dxl_cli dump 11
+    ros2 run dynamixel_tools dxl_cli dump 1
     ros2 run dynamixel_tools dxl_cli torque all off
-    ros2 run dynamixel_tools dxl_cli reboot 13
-    ros2 run dynamixel_tools dxl_cli read 11 146 1
-    ros2 run dynamixel_tools dxl_cli write 11 led 1
+    ros2 run dynamixel_tools dxl_cli reboot 3
+    ros2 run dynamixel_tools dxl_cli read 1 146 1
+    ros2 run dynamixel_tools dxl_cli write 1 led 1
 """
 
 import argparse
@@ -39,12 +38,12 @@ class DxlCli(Node):
         self.component = component or self._discover_component()
         if self.component is None:
             self.get_logger().error(
-                'No dynamixel_hardware services found. Is the ros2_control stack running?')
+                'No motor services found. Is board_bridge running?')
             sys.exit(1)
         self._svc = {}
 
     def _discover_component(self):
-        """Find the hardware component namespace by looking for set_torque."""
+        """Find board_bridge by looking for its set_torque service."""
         deadline = time.time() + 5.0
         quiet = time.time() + 1.0
         found = []
@@ -98,14 +97,22 @@ def resolve_target(text):
     return int(text), None
 
 
+def unsigned_if_known(value, addr, size):
+    """The service always sign-extends, so 250 ms comes back as -6."""
+    for _name, reg_addr, _size, signed, _note in REGISTERS:
+        if reg_addr == addr and not signed:
+            return value & ((1 << (size * 8)) - 1)
+    return value
+
+
 def cmd_dump(cli, args):
-    """Read every known register of one motor -- the READ_REG table dump."""
+    """Read every known register of one motor."""
     print(f'{"name":<24}{"addr":>5}{"size":>5}{"value":>12}  note')
     print('-' * 70)
     for name, addr, size, _signed, note in REGISTERS:
         req = ReadRegister.Request(id=args.id, address=addr, size=size)
         res = cli.call('read_register', req)
-        value = res.value if res.success else 'ERR'
+        value = unsigned_if_known(res.value, addr, size) if res.success else 'ERR'
         print(f'{name:<24}{addr:>5}{size:>5}{value:>12}  {note}')
 
 
@@ -114,7 +121,7 @@ def cmd_read(cli, args):
     size = args.size if args.size else (default_size or 1)
     res = cli.call('read_register', ReadRegister.Request(id=args.id, address=addr, size=size))
     if res.success:
-        print(res.value)
+        print(unsigned_if_known(res.value, addr, size))
     else:
         print(res.message, file=sys.stderr)
         sys.exit(1)
@@ -132,19 +139,19 @@ def cmd_write(cli, args):
 
 def cmd_torque(cli, args):
     res = cli.call('set_torque', SetTorque.Request(id=args.id, enable=args.state))
-    print(res.message if res.success else res.message, file=sys.stderr if not res.success else sys.stdout)
+    print(res.message, file=sys.stdout if res.success else sys.stderr)
     sys.exit(0 if res.success else 1)
 
 
 def cmd_reboot(cli, args):
     res = cli.call('reboot', Reboot.Request(id=args.id))
-    print(res.message if res.success else res.message)
+    print(res.message)
     sys.exit(0 if res.success else 1)
 
 
 def cmd_zero(cli, args):
     res = cli.call('set_zero', SetZero.Request(id=args.id))
-    print(res.message if res.success else res.message)
+    print(res.message)
     sys.exit(0 if res.success else 1)
 
 
@@ -152,7 +159,7 @@ def build_parser():
     p = argparse.ArgumentParser(prog='dxl_cli', description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('-c', '--component', default=None,
-                   help='hardware component namespace (auto-detected if omitted)')
+                   help='namespace of the motor services (auto-detected if omitted)')
     sub = p.add_subparsers(dest='cmd', required=True)
 
     s = sub.add_parser('dump', help='print the full register table of one motor')

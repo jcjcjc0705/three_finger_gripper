@@ -21,8 +21,41 @@ cleanup() {
     echo
     echo "Shutting down docker compose services..."
     echo "Stopping services for $compose_file..."
+    # uros_node has to be told to stop, or the motors keep their torque with nothing
+    # controlling them. Everything else can go at once.
+    if $DOCKER_COMPOSE_COMMAND -f "$compose_file" config --services | grep -qx node; then
+        $DOCKER_COMPOSE_COMMAND -f "$compose_file" stop --timeout 20 node
+    fi
     $DOCKER_COMPOSE_COMMAND -f "$compose_file" down --timeout 0
     exit 0
+}
+
+container_state() {
+    docker inspect -f '{{.State.Running}} {{.State.StartedAt}}' "$1" 2>/dev/null
+}
+
+# The shell `up` leaves you in. Leaving it stops everything, but it also ends when the
+# service is restarted from another terminal, and that must not stop everything.
+# Returns 0 if you left it, and 1 if the service stopped and did not come back.
+stay_in_service() {
+    local compose_file="$1" service="$2" container before
+    while true; do
+        container=$($DOCKER_COMPOSE_COMMAND -f "$compose_file" ps -q "$service")
+        before=$(container_state "$container")
+        $DOCKER_COMPOSE_COMMAND -f "$compose_file" exec -it "$service" bash
+        sleep 1
+        [[ "$(container_state "$container")" == "$before" ]] && return 0
+
+        echo "$service was restarted, reconnecting..."
+        local waited=0
+        until [[ "$(container_state "$($DOCKER_COMPOSE_COMMAND -f "$compose_file" ps -q "$service")")" == true* ]]; do
+            if (( ++waited > 30 )); then
+                echo "$service has not come back. Everything else is still running: 'down' stops it."
+                return 1
+            fi
+            sleep 1
+        done
+    done
 }
 
 main() {
@@ -69,8 +102,9 @@ main() {
             echo "Starting services for $compose_file..."
             $DOCKER_COMPOSE_COMMAND -f "$compose_file" up -d
 
-            $DOCKER_COMPOSE_COMMAND -f "$compose_file" exec -it "$service" bash
-            cleanup "$compose_file"
+            if stay_in_service "$compose_file" "$service"; then
+                cleanup "$compose_file"
+            fi
             ;;
 
         *)

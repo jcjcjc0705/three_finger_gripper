@@ -33,7 +33,7 @@ REGISTERS = [
     ('Moving',                 122, 1, False, '0/1'),
     ('Moving Status',          123, 1, False, 'bitfield'),
     ('Present PWM',            124, 2, True,  ''),
-    ('Present Current/Load',   126, 2, True,  'Load on XL430, Current on XL330'),
+    ('Present Current/Load',   126, 2, True,  ''),
     ('Present Velocity',       128, 4, True,  ''),
     ('Present Position',       132, 4, True,  'ticks'),
     ('Velocity Trajectory',    136, 4, True,  ''),

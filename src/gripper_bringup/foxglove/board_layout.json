@@ -1,0 +1,120 @@
+{
+  "configById": {
+    "3D!gripper": {
+      "cameraState": {
+        "distance": 0.45,
+        "perspective": true,
+        "phi": 60,
+        "thetaOffset": 45,
+        "targetOffset": [
+          0,
+          0,
+          0.08
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "fovy": 45,
+        "near": 0.01,
+        "far": 50
+      },
+      "followMode": "follow-pose",
+      "followTf": "base_link",
+      "scene": {
+        "meshUpAxis": "z_up"
+      },
+      "transforms": {},
+      "topics": {
+        "/robot_description": {
+          "visible": true
+        }
+      },
+      "layers": {},
+      "publish": {
+        "type": "point",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose"
+      },
+      "imageMode": {}
+    },
+    "Image!palm": {
+      "cameraState": {},
+      "followMode": "follow-pose",
+      "scene": {},
+      "transforms": {},
+      "topics": {},
+      "layers": {},
+      "publish": {},
+      "imageMode": {
+        "imageTopic": "/palm_camera/image_raw/compressed"
+      }
+    },
+    "Plot!tof": {
+      "title": "TOF range (m)",
+      "paths": [
+        {
+          "value": "/tof/range.range",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": true,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 30
+    },
+    "RawMessages!status": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/gripper/status.data"
+    },
+    "RawMessages!motors": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/dynamic_joint_states"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "direction": "row",
+    "first": "3D!gripper",
+    "second": {
+      "direction": "column",
+      "first": {
+        "direction": "row",
+        "first": "Image!palm",
+        "second": "Plot!tof",
+        "splitPercentage": 55
+      },
+      "second": {
+        "direction": "row",
+        "first": "RawMessages!status",
+        "second": "RawMessages!motors",
+        "splitPercentage": 50
+      },
+      "splitPercentage": 60
+    },
+    "splitPercentage": 45
+  }
+}

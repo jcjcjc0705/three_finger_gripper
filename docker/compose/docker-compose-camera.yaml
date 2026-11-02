@@ -8,37 +8,22 @@ services:
       target: dev
       args:
         ROS_DISTRO: jazzy
-    image: ghcr.io/jcjcjc0705/three_finger_gripper:dev
+    image: three_finger_gripper:dev
     container_name: gripper_camera
 
     stdin_open: true
     tty: true
 
     network_mode: host
+    # Without this the image topic appears in other containers but delivers nothing.
     ipc: host
-
-    # controller_manager asks for SCHED_FIFO; without these it warns and falls back.
-    cap_add:
-      - SYS_NICE
-    ulimits:
-      rtprio: 99
 
     environment:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
-      - DISPLAY=${DISPLAY}
-      - QT_X11_NO_MITSHM=1
 
     working_dir: /ws
 
-    devices:
-      - /dev/v4l/by-id/usb-Innodesk_Innodisk_USB_Camera_0x0001-video-index0:/dev/palm_cam
-
     volumes:
       - ../..:/ws
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
 
-    command: >
-      ros2 run v4l2_camera v4l2_camera_node --ros-args
-      -r __ns:=/palm_camera
-      -p video_device:=/dev/palm_cam
-      -p camera_frame_id:=palm_camera
+    command: ros2 launch gripper_bringup sensors.launch.py foxglove:=false

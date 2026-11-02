@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
-"""Interactive check for any robot driven by the dynamixel_hardware plugin.
+"""Interactive check for the motors, through board_bridge.
 
-Reads /joint_states and /dynamic_joint_states, publishes to the position
-controller's commands topic, and toggles torque through the hardware
-component's set_torque service. Requires a running stack.
-
-Controller, hardware component and joint order are all discovered at runtime,
-so nothing here is specific to one robot.
+Reads /joint_states and /dynamic_joint_states, publishes to the bridge's commands
+topic, and toggles torque through its set_torque service. Requires a running stack.
 
     ros2 run dynamixel_tools dxl_debug
     ros2 run dynamixel_tools dxl_debug --check
-    ros2 run dynamixel_tools dxl_debug --jog-velocity 30 --step 0.01
+    ros2 run dynamixel_tools dxl_debug --step 0.01
 """
 
 import argparse
@@ -22,120 +18,10 @@ import rclpy
 from rclpy.node import Node
 
 from control_msgs.msg import DynamicJointState
-from controller_manager_msgs.srv import ListControllers, SwitchController
-from dynamixel_msgs.srv import ReadRegister, SetTorque, WriteRegister
+from dynamixel_msgs.srv import SetTorque
 from rcl_interfaces.srv import GetParameters
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
-
-ADDR_GOAL_CURRENT = 102
-ADDR_PROFILE_ACCELERATION = 108
-ADDR_PROFILE_VELOCITY = 112
-
-# Controller types that publish a plain Float64MultiArray this tool can drive.
-FORWARDING_TYPES = ('forward_command_controller', 'position_controllers/JointGroupPositionController')
-
-
-class ControllerLoan:
-    """Borrow an inactive forwarding controller, and hand it back on exit.
-
-    A robot may be running a controller with its own message type and no
-    commands topic. The forwarding controller it replaced is often still loaded
-    but inactive, and a command interface can only be claimed by one active
-    controller, so using it means swapping them. Nothing here names a
-    particular controller: the conflict is found by comparing the interfaces
-    each one claims against the ones the target needs.
-    """
-
-    def __init__(self, node):
-        self._node = node
-        self._displaced = []
-        self._borrowed = None
-
-    def _call(self, client, request, timeout=5.0):
-        if not client.wait_for_service(timeout_sec=timeout):
-            return None
-        future = client.call_async(request)
-        rclpy.spin_until_future_complete(self._node, future, timeout_sec=timeout)
-        return future.result()
-
-    def _manager(self, timeout=5.0):
-        """Namespace of the controller manager, waiting for discovery.
-
-        Reading the graph the instant the node comes up finds nothing: DDS has
-        not finished discovery yet, and a bare scan reports an empty list rather
-        than "not yet".
-        """
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            for name, types in self._node.get_service_names_and_types():
-                if (name.endswith('/list_controllers')
-                        and 'controller_manager_msgs/srv/ListControllers' in types):
-                    return name.rsplit('/', 1)[0]
-            rclpy.spin_once(self._node, timeout_sec=0.2)
-        return None
-
-    def ensure_active(self):
-        """Name of an active forwarding controller, activating one if needed.
-
-        An inactive controller keeps its subscriptions, so its commands topic
-        exists and looks perfectly healthy while nothing acts on the messages.
-        Asking the controller manager for the state is the only way to tell.
-        Returns None when there is nothing suitable.
-        """
-        manager = self._manager()
-        if manager is None:
-            return None
-        listing = self._call(
-            self._node.create_client(ListControllers, f'{manager}/list_controllers'),
-            ListControllers.Request())
-        if listing is None:
-            return None
-
-        forwarding = [c for c in listing.controller
-                      if any(t in c.type for t in FORWARDING_TYPES)]
-        running = next((c for c in forwarding if c.state == 'active'), None)
-        if running is not None:
-            return running.name
-
-        target = next((c for c in forwarding if c.state == 'inactive'), None)
-        if target is None:
-            return None
-
-        wanted = set(target.required_command_interfaces)
-        self._displaced = [c.name for c in listing.controller
-                           if c.state == 'active' and wanted & set(c.claimed_interfaces)]
-
-        result = self._call(
-            self._node.create_client(SwitchController, f'{manager}/switch_controller'),
-            SwitchController.Request(activate_controllers=[target.name],
-                                     deactivate_controllers=self._displaced,
-                                     strictness=SwitchController.Request.STRICT))
-        if result is None or not result.ok:
-            self._displaced = []
-            return None
-
-        self._borrowed = target.name
-        self._manager_name = manager
-        print(f'borrowed {target.name}'
-              + (f', paused {", ".join(self._displaced)}' if self._displaced else '')
-              + ' -- its safety layer is not running while it is paused',
-              file=sys.stderr)
-        return target.name
-
-    def restore(self):
-        if self._borrowed is None:
-            return
-        self._call(
-            self._node.create_client(
-                SwitchController, f'{self._manager_name}/switch_controller'),
-            SwitchController.Request(activate_controllers=self._displaced,
-                                     deactivate_controllers=[self._borrowed],
-                                     strictness=SwitchController.Request.STRICT))
-        print(f'returned {self._borrowed}'
-              + (f', resumed {", ".join(self._displaced)}' if self._displaced else ''),
-              file=sys.stderr)
-        self._borrowed = None
 
 
 class DxlDebug(Node):
@@ -143,24 +29,12 @@ class DxlDebug(Node):
     def __init__(self, args):
         super().__init__('dxl_debug')
         self._dxl_svc = {}
-        self._saved_current = {}
         self._state = None
         self._dyn = None
-        self._args = args
 
-        self._loan = None
-        if args.controller:
-            self._controller = args.controller
-        elif args.no_switch:
-            self._controller = self._discover_controller()
-        else:
-            # Ask the controller manager rather than scanning topics: an
-            # inactive controller still advertises its commands topic.
-            self._loan = ControllerLoan(self)
-            self._controller = self._loan.ensure_active() or self._discover_controller()
+        self._controller = args.controller or self._discover_controller()
         if self._controller is None:
-            print('No */commands topic found, and no inactive forwarding '
-                  'controller to borrow. Is the stack running?', file=sys.stderr)
+            print('No */commands topic found. Is the stack running?', file=sys.stderr)
             sys.exit(1)
 
         self._component = args.component or self._discover_component()
@@ -176,7 +50,6 @@ class DxlDebug(Node):
             Float64MultiArray, f'/{self._controller}/commands', 10)
 
         self._order = self._controller_joints()
-        self._profile_mode = None
 
     def _discover_controller(self):
         def probe():
@@ -268,49 +141,6 @@ class DxlDebug(Node):
     def set_torque(self, on):
         return self._call('set_torque', SetTorque, SetTorque.Request(id=0, enable=on))
 
-    def raise_current(self, motors, limit):
-        """Lift Goal Current for jogging, remembering what it was.
-
-        Whatever ran before may have left a holding-level ceiling that is too
-        weak to move the joint at all -- the commands go through and nothing
-        happens. Restored in release(), which also matters because the driver
-        only writes Goal Current when its own commanded value changes: a
-        register written behind its back stays there until someone puts it back.
-        """
-        if self._component is None:
-            return
-        for motor in motors:
-            was = self._call('read_register', ReadRegister,
-                             ReadRegister.Request(id=motor, address=ADDR_GOAL_CURRENT, size=2))
-            if was is not None and was.success:
-                self._saved_current[motor] = was.value
-            self._call('write_register', WriteRegister, WriteRegister.Request(
-                id=motor, address=ADDR_GOAL_CURRENT, size=2, value=limit))
-
-    def restore_current(self):
-        for motor, value in self._saved_current.items():
-            self._call('write_register', WriteRegister, WriteRegister.Request(
-                id=motor, address=ADDR_GOAL_CURRENT, size=2, value=value))
-        self._saved_current = {}
-
-    def set_profile(self, mode):
-        """Switch every motor's profile. Skipped when already in that mode.
-
-        Units follow the motor's drive_mode: milliseconds under time-based
-        profile (drive_mode=4), deg/s and deg/s^2 under velocity-based (0).
-        """
-        if self._component is None or mode == self._profile_mode:
-            return
-        if mode == 'jog':
-            velocity, acceleration = self._args.jog_velocity, self._args.jog_acceleration
-        else:
-            velocity, acceleration = self._args.home_velocity, self._args.home_acceleration
-        self._call('write_register', WriteRegister, WriteRegister.Request(
-            id=0, address=ADDR_PROFILE_ACCELERATION, size=4, value=acceleration))
-        self._call('write_register', WriteRegister, WriteRegister.Request(
-            id=0, address=ADDR_PROFILE_VELOCITY, size=4, value=velocity))
-        self._profile_mode = mode
-
     @property
     def all_names(self):
         """Commandable joints in the controller's own order, then the rest.
@@ -344,13 +174,6 @@ class DxlDebug(Node):
     @property
     def controller(self):
         return self._controller
-
-    def release(self):
-        """Hand back anything borrowed. Safe to call more than once."""
-        self.restore_current()
-        if self._loan is not None:
-            self._loan.restore()
-            self._loan = None
 
 
 def format_table(dxl, targets, selected=None):
@@ -437,11 +260,9 @@ def run_tui(stdscr, dxl, args):
                 message = 'torque is off'
                 continue
             if c == ord('h'):
-                dxl.set_profile('home')
                 targets = list(start_pose)
                 message = 'returning to start pose'
             else:
-                dxl.set_profile('jog')
                 delta = step if c == curses.KEY_RIGHT else -step
                 targets[selected] += delta
                 message = f'{dxl.order[selected]} -> {targets[selected]:.4f}'
@@ -452,15 +273,13 @@ def build_parser():
     p = argparse.ArgumentParser(prog='dxl_debug', description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('-c', '--controller', default=None,
-                   help='controller name (auto-detected if omitted)')
+                   help='node offering the commands topic (auto-detected if omitted)')
     p.add_argument('--component', default=None,
-                   help='hardware component namespace (auto-detected if omitted)')
+                   help='namespace of the motor services (auto-detected if omitted)')
     p.add_argument('--joint-states', default=None,
                    help='joint states topic (derived from the controller if omitted)')
     p.add_argument('--check', action='store_true',
                    help='print one state table and exit')
-    p.add_argument('--no-switch', action='store_true',
-                   help='do not borrow an inactive forwarding controller')
 
     g = p.add_argument_group('motion tuning')
     g.add_argument('--step', type=float, default=0.02,
@@ -469,17 +288,6 @@ def build_parser():
                    help='lower bound for [ (default: %(default)s)')
     g.add_argument('--step-max', type=float, default=0.05,
                    help='upper bound for ] (default: %(default)s)')
-    g.add_argument('--jog-current', type=int, default=0,
-                   help='Goal Current while jogging, restored on exit. '
-                        '0 leaves it alone (default: %(default)s)')
-    g.add_argument('--jog-velocity', type=int, default=50,
-                   help='profile velocity while jogging (default: %(default)s)')
-    g.add_argument('--jog-acceleration', type=int, default=25,
-                   help='profile acceleration while jogging (default: %(default)s)')
-    g.add_argument('--home-velocity', type=int, default=300,
-                   help='profile velocity for h (default: %(default)s)')
-    g.add_argument('--home-acceleration', type=int, default=150,
-                   help='profile acceleration for h (default: %(default)s)')
     return p
 
 
@@ -497,7 +305,6 @@ def main():
         else:
             curses.wrapper(run_tui, dxl, args)
     finally:
-        dxl.release()
         dxl.destroy_node()
         rclpy.try_shutdown()
 

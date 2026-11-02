@@ -3,19 +3,19 @@
 <package format="3">
   <name>gripper_bringup</name>
   <version>0.0.0</version>
-  <description>Launch files and controller configuration for the three finger gripper</description>
-  <maintainer email="ubuntu@todo.todo">ubuntu</maintainer>
-  <license>TODO: License declaration</license>
+  <description>Launch files for the three finger gripper</description>
+  <maintainer email="jimmy910705@gmail.com">jcjcjc0705</maintainer>
+  <license>Proprietary</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <exec_depend>three_finger_gripper_description</exec_depend>
   <exec_depend>gripper_sensors</exec_depend>
-  <exec_depend>controller_manager</exec_depend>
-  <exec_depend>joint_state_broadcaster</exec_depend>
-  <exec_depend>position_controllers</exec_depend>
+  <exec_depend>dynamixel_tools</exec_depend>
+  <exec_depend>gripper_grasp</exec_depend>
+  <exec_depend>image_transport</exec_depend>
+  <exec_depend>compressed_image_transport</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
-  <exec_depend>v4l2_camera</exec_depend>
   <exec_depend>foxglove_bridge</exec_depend>
   <exec_depend>xacro</exec_depend>
   <exec_depend>launch</exec_depend>

@@ -1,317 +1,378 @@
 # three_finger_gripper
 
-ros2_control driver for a three finger gripper: 8 XC330-M288-T motors, 8
-independently actuated joints, palm camera and TOF.
+A three finger gripper with 8 XC330-M288-T motors, a palm camera and a palm TOF sensor.
+Everything on the gripper runs on its ns02501/NT98532 board under micro-ROS. A PC
+connected over Ethernet starts it, displays it and sends it commands.
 
-ROS 2 Jazzy, everything in Docker.
-
----
-
-## Where the control loop lives
-
-Today the PC runs the servo loop over an OpenRB-150. Later it moves onto a
-Novatek NT98532 running micro-ROS, and the PC keeps only perception and the
-grasp decision.
-
-```
-Phase 1 (now)                      Phase 2 (NT98532)
-ros2_control controller  ←swap→    micro-ROS thread
-        ↓                                  ↓
-   gripper_servo         ←same→      gripper_servo
-        ↓                                  ↓
-   DynamixelBus          ←same→      DynamixelBus
-        ↓                                  ↓
- PortHandler (Linux)     ←swap→   port_handler_novatek
-```
-
-**No grasp strategy lives below the decision layer.** The servo layer only
-knows how to reach a joint pose smoothly and stop pushing when the current
-saturates. Swapping a hand-written policy for a learned one never touches
-firmware.
+- [System architecture](#system-architecture)
+- [Setup](#setup)
+- [Starting and stopping](#starting-and-stopping)
+- Functions: [Grasping](#grasping), [Teaching objects and grasps](#teaching-objects-and-grasps),
+  [Viewing in Foxglove](#viewing-in-foxglove), [Motor debugging](#motor-debugging),
+  [Safety behaviour](#safety-behaviour), [3D model](#3d-model)
+- [ROS 2 interface](#ros-2-interface)
+- [Known limitations](#known-limitations)
 
 ---
 
-## Quick start
+## System architecture
 
-One script per thing that can run, and one that runs them all. Each starts the
-service and drops you into a shell in it; Ctrl-C tears it down again.
+```
+ board (ns02501/NT98532, 192.168.0.3)            PC (192.168.0.1, Docker, ROS 2 Jazzy)
 
-```bash
-docker/scripts/gripper.sh          # ros2_control and the eight motors
-docker/scripts/camera.sh           # palm camera
-docker/scripts/tof.sh              # palm TOF
-docker/scripts/foxglovebridge.sh   # bridge on :8765
-docker/scripts/start-all.sh        # all four at once
+ uros_node                                       gripper_node    starts and stops uros_node
+ ├ grasp sequencer, stored objects and grasps ◄─ serial console ─┘
+ ├ servo loop, self-collision check
+ ├ motor debugging                               gripper_agent   micro-ROS Agent
+ │                                                    │ ROS 2 topics
+ ├ motors    /dev/ttyS1  ┐                            ├─ gripper_state    /joint_states, /tf,
+ ├ TOF       /dev/i2c-2  ├──── UDP 8888 ──────────────┘                   board_bridge
+ │                       ┘                            ├─ grasp_tui        grasp control
+ └ camera    /dev/video0 ───── TCP 9000 ─► gripper_camera  /palm_camera   dxl_cli, dxl_debug
+                                                      └─ gripper_foxglove  :8765 ─► Foxglove
 ```
 
-Anything else is passed through to `docker compose`:
-
-```bash
-docker/scripts/gripper.sh down
-docker/scripts/camera.sh logs -f
-```
-
-To build or run tools without the service's own process in the way, use
-`debug`: it stops the service and gives you an idle container with the same
-mounts and devices.
-
-```bash
-docker/scripts/gripper.sh debug
-
-cd /ws
-colcon build --symlink-install
-source install/setup.bash
-ros2 launch three_finger_gripper_description view_robot.launch.py
-```
-
-The source tree is bind mounted at `/ws`, so edits on the host apply
-immediately, and interactive shells source ROS and the workspace for you.
-
-`start-all` and the single-service scripts cannot run at the same time: both
-want the same container names.
-
----
-
-## Hardware
-
-| Device | Container path | Source |
+| Runs on | Part | What it does |
 |---|---|---|
-| USB to DYNAMIXEL (FTDI, 8 motors) | `/dev/gripper` | `usb-FTDI_USB__-__Serial_Converter_FTBEQOTJ…` |
-| TOF (Seeed XIAO M0) | `/dev/tof` | `usb-Seeed_Seeed_XIAO_M0_69B31688…` |
-| Palm camera (Innodisk) | `/dev/palm_cam` | `usb-Innodesk_Innodisk_USB_Camera_0x0001-video-index0` |
+| Board | `uros_node` | Control loop, grasps, self-collision protection, motor debugging, what the hand has been taught |
+| Board | `dxl_offline`, `tof_read`, `camera_capture`, `uros_hello` | Test one subsystem on its own, with `uros_node` stopped |
+| PC | `gripper_agent` | The micro-ROS Agent, which connects `uros_node` to ROS 2 |
+| PC | `gripper_node` | Starts and stops `uros_node` over the board's serial console |
+| PC | `gripper_state` | `robot_state_publisher` and `board_bridge`: `/joint_states`, `/tf`, motor services |
+| PC | `gripper_camera` | `palm_stream`: camera frames from the board to ROS 2 |
+| PC | `gripper_foxglove` | The Foxglove bridge on port 8765 |
+| PC | `grasp_tui` | Terminal interface to watch and drive the grasps |
+| PC | `dxl_cli`, `dxl_debug` | Motor registers, torque, reboot, jogging |
 
-Mapped by serial number in `docker/compose/`, so which USB port they land in
-does not matter. `docker-compose-start-all.yaml` includes the single-service
-files rather than repeating them, so each device is declared once.
+Rates: control loop and joint states 25 Hz, TOF 30 Hz, camera 640x480 MJPEG at 30 fps,
+about 5 Mbit/s.
 
-The motors need their own supply. Running them off USB bus power sags the rail
-under a grip and trips the motors' input-voltage shutdown: 4.5 V at idle was
-already too little, 4.9 V is fine.
+### Repository
 
-### Motors
+```
+docker/              PC image, one compose file and one script per service
+firmware_ns02501/    Everything that runs on the board, see its README
+  HARDWARE.md        Wiring and board configuration
+src/                 ROS 2 packages on the PC
+  dynamixel_msgs       motor service definitions
+  dynamixel_tools      dxl_cli, dxl_debug, board_bridge
+  gripper_bringup      launch files, Foxglove layout
+  gripper_grasp        grasp_tui
+  gripper_sensors      palm_stream
+  three_finger_gripper_description   URDF and meshes
+cad/                 The gripper's CAD
+```
 
-Names are the CAD's, so the URDF, the USD and the mechanical drawings agree.
+---
 
-| Motor | Function | Joint | Limits |
-|---|---|---|---|
-| 1 | thumb proximal flexion | `C_2_Joint` | -12.7° ~ 72.2° |
-| 2 | thumb distal flexion | `C_3_Joint` | -120° ~ 36.9° |
-| 3 | index proximal flexion | `A_2_Joint` | -28.6° ~ 70.9° |
-| 4 | index distal flexion | `A_3_Joint` | -120° ~ 36.9° |
-| 5 | middle proximal flexion | `B_2_Joint` | -28.6° ~ 70.9° |
-| 6 | middle distal flexion | `B_3_Joint` | -120° ~ 36.9° |
-| 7 | index spread | `A_1_Joint` | ±90° |
-| 8 | middle spread | `B_1_Joint` | ±90° |
+## Setup
 
-The thumb base is fixed, so the thumb has no spread joint.
+**Hardware:** wire the board as in [firmware_ns02501/HARDWARE.md](firmware_ns02501/HARDWARE.md).
 
-### Sign convention
+**Board:** build and copy the firmware as in
+[firmware_ns02501/README.md](firmware_ns02501/README.md). It lives in `/usr/bin/gripper/`
+and the board's address is 192.168.0.3.
 
-**Zero is fully open. Negative closes.** All six flexion joints curl toward the
-palm on negative angles; the positive range hyperextends the finger further out.
-That is why the ranges look lopsided — the proximal joints only need 13–29° of
-negative travel because the fingers are ~100 mm long, so a small rotation at the
-base sweeps the tip a long way.
+**PC:** Linux with Docker and Docker Compose. Then:
 
-| Pose | Index tip radius from the palm axis |
+1. Set the Ethernet port connected to the board to the static address `192.168.0.1/24`.
+2. Plug in the USB serial adapter on the board's console. To start with another adapter
+   than the Prolific one in `docker/compose/docker-compose-agent.yaml`:
+   `export BOARD_CONSOLE=/dev/serial/by-id/<your adapter>`.
+3. Build the image and the ROS 2 workspace, once:
+
+   ```bash
+   docker/scripts/build.sh
+   ```
+
+   The image runs as UID 1000, which has to be able to write to this directory.
+
+---
+
+## Starting and stopping
+
+```bash
+docker/scripts/start-all.sh            # everything, torque on
+docker/scripts/start-all.sh --dry-run  # everything, torque stays off and nothing moves
+```
+
+Torque coming on does not move the fingers. `start-all.sh` leaves you in a shell in one
+of the containers. Open others with:
+
+```bash
+docker/scripts/start-all.sh exec
+```
+
+**Leaving the first shell stops everything.** `uros_node` turns the torque off, so
+whatever is in the hand falls. Every motor is then read back to confirm.
+
+Each service also has its own script, working on the same containers, so one can be
+restarted while the others keep running:
+
+| Script | Starts |
 |---|---|
-| `A_2_Joint` 0° (open) | 62 mm |
-| `A_2_Joint` -28.6° (closed) | 16 mm |
-| `A_3_Joint` -120° (curled) | 27 mm, and 80 mm lower |
+| `docker/scripts/agent.sh [--dry-run]` | Agent and `uros_node` |
+| `docker/scripts/gripper.sh` | `/joint_states`, `/tf`, `board_bridge` |
+| `docker/scripts/camera.sh` | Camera from the board |
+| `docker/scripts/foxglovebridge.sh` | Foxglove bridge |
 
-Fingertip triangle, spread at 0°: **124 / 78 / 67 mm** fully open, **44 / 30 /
-21 mm** fully closed. The joint limits alone keep the fingertips 21 mm apart at
-worst, so they cannot pinch each other (link bodies are not checked yet).
+Any other argument goes to `docker compose`:
 
-Two spread configurations worth knowing:
+| Command | |
+|---|---|
+| `docker/scripts/agent.sh restart agent` | Restart the link only. The hand is left alone |
+| `docker/scripts/agent.sh restart node` | Restart `uros_node`. **Drops the torque** |
+| `docker/scripts/agent.sh logs node` | Starting and stopping `uros_node`. Its own log is `/tmp/uros.log` on the board |
+| `docker/scripts/camera.sh logs -f` | A service's log |
+| `docker/scripts/gripper.sh debug` | An idle container of that service, to build or run tools in |
 
-| | `A_1_Joint` | `B_1_Joint` | Result |
-|---|---|---|---|
-| Tripod | 52° | -52° | tips 111° / 117° / 132° apart, confirmed on hardware |
-| Pinch | 80° | -80° | index and middle side by side, thumb opposite |
-
-Tripod is the evenest symmetric spread; exactly 120° apart is not reachable
-while keeping the fingers mirrored, because the thumb's base sits closer in. At
-52° the index and middle tips are 54 mm from the palm axis and the thumb only
-33 mm — that 21 mm is fixed by where the bases are, and a grasp has to take it
-up with the flexion joints, not the spread.
-
-**Nothing outside the decision layer should know these numbers.**
-
-All eight run `current_based_position`: position control with a torque ceiling.
-On the flexion joints that makes contact safe; on the spread joints it protects
-the mechanism when two fingers meet.
-
-Model number 1240 = XC330-M288-T. The bus runs at **1 Mbaud**; the motors ship
-at 57600, which caps the loop at about 16 Hz once you account for a 25 byte
-SyncRead across eight motors plus the SyncWrite. At 1 Mbaud the same cycle is
-3.5 ms.
-
-    ros2 run dynamixel_hardware dxl_offline --port /dev/gripper scan
-
-### Self-collision
-
-Fourteen link pairs can touch inside the joint limits — run
-`tools/selfcollision.py` for the list. The dominant ones are index/thumb and
-middle/thumb distal links, then fingers curling into the palm.
-
-Do not build a lookup table off a one-dimensional "closure" path. Along a naive
-curl-everything-proportionally trajectory the index and thumb fingertips
-interpenetrate by up to 8.6 mm around 55% closure and separate again by 80% —
-**collision is not monotonic in closure**, so a table built by walking that path
-describes the path, not the mechanism. The servo layer has to check the pairs at
-run time; the plan is a few spheres per link, which is a couple of hundred
-distance tests per cycle and fits on the MCU.
+`UROS_ARGS` passes options to `uros_node`, such as
+`UROS_ARGS="--band-mm 60" docker/scripts/start-all.sh`. See the
+[firmware README](firmware_ns02501/README.md#uros_node) for the options.
 
 ---
-
-## Sensors
-
-| | Topic | Notes |
-|---|---|---|
-| Palm camera | `/palm_camera/image_raw` | `v4l2_camera`, no driver of our own |
-| Palm TOF | `/tof/range`, `/tof/raw` | `gripper_sensors/tof_node` |
-
-Both have frames on the palm, `palm_camera` and `palm_tof`, defined in
-`urdf/palm_sensors.xacro`. The TOF sits at the board centre, the camera 7.2 mm
-away from it on the side opposite the thumb, both 81 mm above the palm base and
-looking along +Z.
 
 ## Grasping
 
-You pick how the fingers should be arranged; the TOF picks the moment.
-
 ```bash
-ros2 run gripper_grasp grasp_pilot
+docker/scripts/start-all.sh exec
+ros2 run gripper_grasp grasp_tui
 ```
 
-`1/2/3` choose a grasp, `space` arms, `r` releases, `a` toggles the alignment
-gate, `c` calibrates the trigger, `q` quits.
+⚠ With torque on, `Enter`, `g`, `a`, `b` and `r` move the fingers.
 
-| Grasp | Spread | Closes to | For |
-|---|---|---|---|
-| tripod | +52° / -52° | 28% | round objects, three tips evenly spaced |
-| pinch | +90° / -90° | 30% | rims: index and middle together against the thumb |
-| wide | 0° / 0° | 37% | widest opening |
-
-**Calibrate the trigger before the first run.** Put an object where you want the
-hand to close on it -- surrounded by the fingers, not yet touched -- and press
-`c`. The current range becomes the middle of the trigger window. This cannot be
-derived: `palm_tof`'s pose in the URDF is a guess, and the measured range
-disagrees with it by more than a factor of two.
-
-Contact comes from the per-joint stall flags, never from the range. Past about
-11% closure the TOF is looking at the fingers, so the two signals never overlap
-and there is no ambiguity to resolve.
-
-### Closure limits are a table, not a search
-
-Self-collision splits the closure space in two, and the far half is reachable
-only by moving the spread joints along the way -- which during a grasp sweeps
-the object out of the hand. It is not worth reaching either: curling that far
-carries the fingertips past each other rather than together.
-
-So `tools/gen_reach.py` measures where the edge is and writes it into
-`gripper_grasp/reach_table.py`, and every grasp takes its ceiling from there.
-The decision layer never asks for a pose the hand cannot reach, so
-`gripper_servo` never has to refuse one. **A `BLOCKED` status now means
-something bypassed the table**, not business as usual.
-
-The limit has a cliff in it: 96% at -25° spread, 51% at -20°. `max_closure()`
-takes the smaller of the two bracketing samples rather than interpolating,
-because interpolating across that cliff hands back a number the hand cannot
-reach.
-
-### The gripper sees its own fingers
-
-Measured with `ros2 run gripper_sensors tof_occlusion`, which closes the hand
-slowly and logs the range against closure:
-
-| Closure | What the TOF is measuring |
+| Key | |
 |---|---|
-| 0 – 11% | the scene |
-| 11 – 31% | its own fingers |
-| 31% | self-collision limiting stops the closure |
+| Arrows, `Enter` | Pick an object or a grasp and move to its preshape |
+| `a` | Start or stop following the object in, see below |
+| `g` | Close now |
+| `r` | Release: open to the preshape. Anything held falls |
+| `s` | Stop and hold where it is |
+| `c` | Save the current range as where the fingers meet this object |
+| `b` | Measure where this grasp's fingers block the TOF. The empty hand closes |
+| `t` | Torque on or off. While holding something it asks first |
+| `n`, `e`, `d` | New, edit, delete the object or grasp under the cursor |
+| `q` | Quit. The hand carries on with what it was doing |
 
-A single-zone TOF has no way to pick a direction: it integrates its whole cone
-and reports one distance dominated by the strongest return, and a finger a few
-centimetres away beats anything further out. So **trust the range only while the
-hand is nearly open**, and use the per-joint `stalled` flags for contact once it
-starts closing. That is what they are for.
+The screen shows the phase, the grasp and object in hand, the closure, the TOF range and,
+for each joint, the goal, the position, the difference, the current and its ceiling,
+contact, torque, temperature, voltage and hardware error. Warnings are shown in reverse
+video: no data from the board, a self-collision pose, a motor hardware error, a failed
+save.
 
-The measurement also says the sensor is not where this repo assumes. At 11%
-closure the nearest fingertip is 91 mm from a sensor at (0, 0, 0.081) looking
-along +Z, but the reading settles at 40 mm. One scalar cannot solve for three
-unknowns, so the pose in `urdf/palm_sensors.xacro` stays as measured on the
-board and the frame's orientation is still a guess. Get it from the CAD.
+| Phase | |
+|---|---|
+| `idle` | No goal: holding where it is |
+| `preshape` | Open, in this grasp's preshape |
+| `armed` | Waiting for the object to come in range |
+| `following` | Closing as the object comes in |
+| `closing` | Closing until the contacts stop it |
+| `holding` | Keeping its grip |
+| `measuring` | Measuring where the fingers block the TOF |
 
-**Known CAD discrepancy:** the palm mesh has that sensor board mirrored in Y, so
-in RViz the camera appears on the thumb side while the real one is opposite. The
-frames carry the measured values, not the mesh's. Nothing functional depends on
-it — the kinematics and the self-collision model never touch the palm mesh — but
-it should be fixed upstream rather than patched here, since `tools/usd2urdf.py`
-regenerates the mesh from the CAD.
+**Following the object in (`a`).** Once the object is within 40 mm of its calibrated
+distance, the nearer it comes, the further the hand closes, reaching the object as the
+object reaches the calibrated distance. If it stops, the hand stops. If it backs off or
+disappears, the hand opens. Once the fingers block the TOF the hand carries on at the rate
+it was closing until enough joints report contact. A full closure takes at least 3 s, so
+an object coming faster than about 12 mm/s arrives before the fingers do.
 
-The TOF's MCU streams ASCII over USB CDC at 30 Hz:
+**Closing now (`g`)** closes over 4 s, whatever the TOF reads.
 
-```
-D,<distance_mm>,<range_status>\r\n
-```
+### Grasps
 
-`tof_node` publishes `sensor_msgs/Range`, reporting an invalid status as `+inf`
-per the message's convention, and the raw distance separately on `tof/raw` —
-`Range` alone is useless for watching the sensor come alive when every reading
-is invalid.
+| Grasp | Spread (index / middle) | Opening | For |
+|---|---|---|---|
+| `tripod` | +52° / -52° | about 80 mm | Round objects, three tips evenly spaced |
+| `pinch` | +90° / -90° | about 70 mm | Index and middle together against the thumb |
+| `wide` | 0° / 0° | about 80 mm to the thumb | Fingers apart |
+| `envelop` | +52° / -52° | about 190 mm | Large soft objects: proximal joints lean out, then wrap |
+| `pinch_wide` | +90° / -90° | about 190 mm | A pinch for something thicker |
+| `two_finger` | 0° / 0° | about 130 mm | Small objects: index against middle, the thumb leans out |
 
-```bash
-ros2 launch gripper_bringup sensors.launch.py
-```
+### Objects
 
-In Foxglove, set the 3D panel's **Scene > Mesh up-axis to `Z-up`**. STL carries
-no up-axis, so the viewer has to be told, and the default rotates every link by
-90 degrees about X -- the model comes out with each part facing the wrong way
-and the palm upside down. RViz has no such setting and always looked right,
-which is the tell: same `/robot_description`, two viewers, different picture
-means the viewer is at fault, not the data.
+A new board knows `cup` (`pinch`), `foam` (`tripod`) and `bear` (`envelop`), uncalibrated.
+Up to 32 objects and 16 added grasps are kept on the board, and survive a power cut.
 
-That also starts `foxglove_bridge` on port 8765. Connect Foxglove to
-`ws://localhost:8765` for the camera, the TOF, `/joint_states` and
-`/dynamic_joint_states` (motor temperature, voltage, current, error) in one
-place.
-
----
-
-## Regenerating the description
-
-The URDF and meshes are generated from the CAD, not hand-edited.
-
-```bash
-pip install usd-core trimesh scipy numpy
-python3 tools/usd2urdf.py      # cad/*.usdz -> meshes/ + urdf/
-python3 tools/verify_urdf.py   # every joint must reproduce the USD pose
-```
-
-`verify_urdf.py` solves each joint angle back out of the USD's own link poses.
-A non-zero rotation residual means a joint frame was mis-composed — the failure
-mode that silently mirrors one finger onto the wrong side.
-
-Two things about the CAD worth knowing:
-
-- The stage declares `metersPerUnit = 0.01` but the geometry is authored in
-  metres. Read as centimetres the whole gripper is 1.7 mm across.
-- `A_2_Joint` and `A_3_Joint` carry a 180° `localRot1`; the other six do not. A
-  USD joint pins one frame on each body, URDF has only one, so the child frame
-  has to be folded into the origin and the axis rotated with it.
+`/gripper/object` names what is in front of the hand. Object recognition is not included:
+whatever recognises the object only has to publish its name there.
 
 ---
 
-## Packages
+## Teaching objects and grasps
 
-| Package | Gripper-specific | Contents |
-|---|---|---|
-| `dynamixel_msgs` | no | service definitions |
-| `dynamixel_hardware` | no | serial bus, ros2_control plugin, offline CLI |
-| `dynamixel_tools` | no | `dxl_cli`, `dxl_debug` |
-| `three_finger_gripper_description` | yes | URDF, meshes, ros2_control tags |
+The object list shows each object's grasp and calibration: `cup -> pinch  85mm 84%` closes
+with `pinch`, meets the object at a TOF reading of 85 mm and touches it at 84% closure.
+The grasp list shows `blind`, the closure from which the fingers block the TOF. `grasp_tui`
+says what is missing for the object and grasp in hand.
 
-The three `dynamixel_*` packages are shared unchanged with `omx_arm`.
+**Once per grasp,** with the hand empty and nothing within 200 mm of the TOF, select it
+and press `b`, `y`.
+
+**A new object:**
+
+1. Press `n` on the object list and name it.
+2. Pick a grasp, or `+ new grasp` to add one. The hand moves to its preshape.
+3. Hold the object where the fingers should meet it and press `c`.
+4. Keep it there and press `g`. The hand closes and saves how far it had closed when it
+   touched. Press `r` to open.
+
+From then on, pick the object, press `a` and bring it in.
+
+**A new grasp,** from `+ new grasp` or `n` on the grasp list, after naming it:
+
+1. Press `t` for torque off. The fingers go limp.
+2. Bend them to the open pose and press `o`.
+3. Bend them to the closed pose and press `k`. The spread stays as it was at `o`.
+4. Press `t` for torque on, which moves nothing, and `Enter` to save.
+
+Arrows and digits edit a number in the form. `current`, `seconds` and `contacts` set this
+grasp's Goal Current, closing time and joints in contact, with 0 keeping the default.
+A grasp outside the joint limits, closing into self-collision or unable to open again is
+refused, with the reason.
+
+---
+
+## Viewing in Foxglove
+
+Connect [Foxglove](https://foxglove.dev) to `ws://localhost:8765` and import
+`src/gripper_bringup/foxglove/board_layout.json` for the 3D model, camera, TOF, status and
+motor temperature, voltage and error.
+
+Without that layout, set the 3D panel's **Scene > Mesh up-axis** to `Z-up`, and use
+`/palm_camera/image_raw/compressed` for the camera. `/palm_camera/image_raw` is the same
+camera decoded, at about 215 Mbit/s.
+
+---
+
+## Motor debugging
+
+With everything running, from `docker/scripts/start-all.sh exec`:
+
+```bash
+ros2 run dynamixel_tools dxl_cli dump 1              # every register of motor 1
+ros2 run dynamixel_tools dxl_cli read 1 146 1        # address and size
+ros2 run dynamixel_tools dxl_cli write 1 led 1       # address or name, then value
+ros2 run dynamixel_tools dxl_cli torque all off      # a motor, or all
+ros2 run dynamixel_tools dxl_cli reboot 3            # clears a hardware error
+ros2 run dynamixel_tools dxl_cli zero 3              # the present position becomes zero
+ros2 run dynamixel_tools dxl_debug                   # table of all motors, with jogging
+ros2 run dynamixel_tools dxl_debug --check           # print the table once
+```
+
+`dxl_debug` keys: up/down select a joint, left/right jog it, `[` `]` change the step, `h`
+back to the start pose, `t` torque, `q` quit.
+
+- A reboot leaves that motor's torque off, and its RAM registers restored.
+- Enabling torque on a motor does not move it.
+- Grasp commands are ignored while any motor has no torque.
+- Jogging goes through the same self-collision and joint limit checks as everything else,
+  and is ignored while closing or holding.
+- Refused: writing registers 100-119, the ID and the baud rate. EEPROM writes need that
+  motor's torque off.
+
+With `uros_node` stopped, `dxl_offline` on the board does the same over the bus directly.
+See the [firmware README](firmware_ns02501/README.md#programs-on-the-board).
+
+### Motors
+
+Zero is fully open, and negative closes. The bus runs at 1 Mbaud.
+
+| ID | Joint | Function | Limits |
+|---|---|---|---|
+| 1 | `C_2_Joint` | Thumb proximal | -12.7° to 72.2° |
+| 2 | `C_3_Joint` | Thumb distal | -120° to 36.9° |
+| 3 | `A_2_Joint` | Index proximal | -28.6° to 70.9° |
+| 4 | `A_3_Joint` | Index distal | -120° to 36.9° |
+| 5 | `B_2_Joint` | Middle proximal | -28.6° to 70.9° |
+| 6 | `B_3_Joint` | Middle distal | -120° to 36.9° |
+| 7 | `A_1_Joint` | Index spread | ±90° |
+| 8 | `B_1_Joint` | Middle spread | ±90° |
+
+---
+
+## Safety behaviour
+
+| Situation | What happens |
+|---|---|
+| A goal would make the fingers collide | The fingers stop short, `servo=blocked` |
+| Fingers pushed into a pose they cannot move out of | After 0.3 s every motor loses torque, `fault=self_collision`. Torque is refused until the fingers are moved apart by hand, then `t` turns it on. It does not come back by itself |
+| Starting in such a pose | Torque stays off until then |
+| A motor shuts itself down on overload, overheating or electrical shock | `hw_err` counts it and grasp commands are ignored. `dxl_cli reboot <id>`, then torque on |
+| The PC or the link goes away | The hand keeps its grip and finishes what it was doing, and reconnects by itself |
+| A finger pushing at its current ceiling | It stops advancing, and keeps its grip |
+| Stopping through the scripts | Torque off, then every motor is read back and turned off if still on |
+
+Each motor also has its position limits in EEPROM, and Goal Current limits how hard it can
+push: 350 on flexion joints and 250 on spread joints, out of 800.
+
+---
+
+## 3D model
+
+The model in RViz with sliders for the joints, no hardware needed:
+
+```bash
+xhost +local:
+docker/scripts/gripper.sh debug
+ros2 launch three_finger_gripper_description view_robot.launch.py
+```
+
+---
+
+## ROS 2 interface
+
+| Topic | Type | Rate | |
+|---|---|---|---|
+| `/gripper/command` | `std_msgs/String` | in | Commands, below |
+| `/gripper/object` | `std_msgs/String` | in | Name of the object in front of the hand |
+| `/gripper/status` | `std_msgs/String` | 5 Hz | `phase= object= grasp= closure= servo= contacts= ... fault= note=` |
+| `/gripper/goal` | `std_msgs/Float32MultiArray` | 10 Hz | 8 positions (rad), 8 current ceilings, then 1 if a goal is active |
+| `/gripper/joint_states` | `sensor_msgs/JointState` | 25 Hz | From the board. `effort` is Present Current in register units |
+| `/gripper/motor_diag` | `std_msgs/Float32MultiArray` | 2 Hz | Per joint: temperature, voltage, hardware error, torque |
+| `/tof/range` | `sensor_msgs/Range` | 30 Hz | `+inf` when the sensor could not measure |
+| `/joint_states`, `/tf` | | 25 Hz | From `gripper_state` |
+| `/dynamic_joint_states` | `control_msgs/DynamicJointState` | 2 Hz | `/gripper/motor_diag` with names |
+| `/palm_camera/image_raw/compressed` | `sensor_msgs/CompressedImage` | 30 Hz | JPEG |
+| `/palm_camera/image_raw` | `sensor_msgs/Image` | 30 Hz | Decoded |
+
+Joint order on the array topics is motor 1 to 8.
+
+| Command | |
+|---|---|
+| a grasp name | Choose it and move to its preshape |
+| `arm`, `disarm` | Start or stop following the object in |
+| `grasp` | Close now |
+| `release`, `open` | Back to the preshape |
+| `stop` | Hold where it is, issuing no goals |
+| `calibrate` | The current range is where the fingers meet the object in hand, saved. The next `grasp` saves how far it had closed by then |
+| `measure` | Close an empty hand slowly and save where the fingers block the TOF |
+| `photo` | Save a JPEG on the board and report its path on `/gripper/status` |
+| `catalog`, `object_save`, `object_delete`, `grasp_save`, `grasp_delete` | What `grasp_tui` uses to list and teach, see the [firmware README](firmware_ns02501/README.md#what-the-hand-has-been-taught) |
+
+```bash
+ros2 topic pub --once /gripper/object std_msgs/msg/String "{data: cup}"
+ros2 topic pub --once /gripper/command std_msgs/msg/String "{data: arm}"
+```
+
+`board_bridge` offers `~/set_torque`, `~/reboot`, `~/set_zero`, `~/read_register` and
+`~/write_register` under `/gripper_board`, with the types in `dynamixel_msgs`.
+
+---
+
+## Known limitations
+
+- **`uros_node` is started over the serial console.** The adapter has to be plugged in,
+  and no other terminal may hold the port while it starts or stops. It does not start by
+  itself when the board boots.
+- **If `gripper_node` dies without stopping cleanly,** through a PC crash or `docker kill`,
+  `uros_node` keeps running with torque on until the next start stops it.
+- **The last part of a followed grasp is a prediction,** because the fingers block the TOF.
+  An object changing speed there is gripped further from its calibrated distance.
+- **An added grasp is not checked against every other grasp.** If the hand cannot reach its
+  preshape from where it is, it stops with `servo=blocked`: go through another grasp.
+- **The longest hold tested at the current ceiling is 20 s.** Longer holds have not been
+  tested for heat.
+- The palm mesh shows the sensor board mirrored, and `palm_tof`'s pose in the URDF is
+  approximate. Neither affects control.

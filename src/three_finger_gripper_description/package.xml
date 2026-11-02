@@ -3,9 +3,9 @@
 <package format="3">
   <name>three_finger_gripper_description</name>
   <version>0.0.0</version>
-  <description>URDF, meshes and ros2_control tags for the three finger gripper</description>
-  <maintainer email="ubuntu@todo.todo">ubuntu</maintainer>
-  <license>TODO: License declaration</license>
+  <description>URDF and meshes for the three finger gripper</description>
+  <maintainer email="jimmy910705@gmail.com">jcjcjc0705</maintainer>
+  <license>Proprietary</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

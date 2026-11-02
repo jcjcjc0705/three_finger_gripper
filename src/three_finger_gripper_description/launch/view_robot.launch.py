@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+"""The 3D model in RViz with sliders for the joints. No hardware needed.
+
+    ros2 launch three_finger_gripper_description view_robot.launch.py
+"""
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
@@ -29,7 +35,6 @@ def generate_launch_description():
                     'three_finger_gripper.urdf.xacro',
                 ]),
                 ' prefix:=', LaunchConfiguration('prefix'),
-                ' use_mock_hardware:=true',
             ]),
             value_type=str,
         )

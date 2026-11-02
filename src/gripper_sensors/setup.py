@@ -13,15 +13,13 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='ubuntu',
-    maintainer_email='ubuntu@todo.todo',
-    description='Palm TOF driver',
-    license='TODO: License declaration',
+    maintainer='jcjcjc0705',
+    maintainer_email='jimmy910705@gmail.com',
+    description='Palm camera stream from the board',
+    license='Proprietary',
     entry_points={
         'console_scripts': [
-            'tof_node = gripper_sensors.tof_node:main',
-            'tof_occlusion = gripper_sensors.tof_occlusion:main',
-            'gripper_monitor = gripper_sensors.gripper_monitor:main',
+            'palm_stream = gripper_sensors.palm_stream:main',
         ],
     },
 )

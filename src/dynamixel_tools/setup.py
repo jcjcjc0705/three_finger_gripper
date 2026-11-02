@@ -13,19 +13,15 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='ubuntu',
-    maintainer_email='ubuntu@todo.todo',
-    description='TODO: Package description',
-    license='TODO: License declaration',
-    extras_require={
-        'test': [
-            'pytest',
-        ],
-    },
+    maintainer='jcjcjc0705',
+    maintainer_email='jimmy910705@gmail.com',
+    description='dxl_cli, dxl_debug and the board_bridge they talk to',
+    license='Proprietary',
     entry_points={
         'console_scripts': [
             'dxl_cli = dynamixel_tools.dxl_cli:main',
             'dxl_debug = dynamixel_tools.dxl_debug:main',
+            'board_bridge = dynamixel_tools.board_bridge:main',
         ],
     },
 )

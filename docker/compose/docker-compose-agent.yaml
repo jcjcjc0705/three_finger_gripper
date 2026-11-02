@@ -1,0 +1,47 @@
+name: three_finger_gripper
+
+services:
+  # uros_node on the board connects out to this, on UDP 8888. The TOF, the joint
+  # states and the status all arrive through it.
+  agent:
+    image: microros/micro-ros-agent:jazzy
+    container_name: gripper_agent
+
+    stdin_open: true
+    tty: true
+
+    network_mode: host
+
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+
+    command: udp4 --port 8888
+
+  # uros_node itself, started and stopped over the board's serial console.
+  node:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      target: dev
+      args:
+        ROS_DISTRO: jazzy
+    image: three_finger_gripper:dev
+    container_name: gripper_node
+
+    environment:
+      - UROS_ARGS=${UROS_ARGS:-}
+      - AGENT_IP=${AGENT_IP:-192.168.0.1}
+
+    working_dir: /ws
+
+    devices:
+      # Mapped by serial number so swapping USB ports changes nothing.
+      - ${BOARD_CONSOLE:-/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_D-if00-port0}:/dev/board_console
+
+    volumes:
+      - ../..:/ws
+
+    # Long enough to stop uros_node and read every motor's torque back.
+    stop_grace_period: 20s
+
+    command: python3 docker/scripts/board_node.py

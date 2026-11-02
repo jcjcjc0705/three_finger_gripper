@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <!-- XC330-M288-T, confirm against the datasheet -->
+  <!-- XC330-M288-T -->
   <xacro:property name="effort" value="0.9"/>
   <xacro:property name="velocity" value="8.0"/>
 
