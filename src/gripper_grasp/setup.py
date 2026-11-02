@@ -16,7 +16,7 @@ setup(
     maintainer='jcjcjc0705',
     maintainer_email='jimmy910705@gmail.com',
     description='Watch and drive the grasps running on the board',
-    license='Proprietary',
+    license='TODO: License declaration',
     entry_points={
         'console_scripts': [
             'grasp_tui = gripper_grasp.grasp_tui:main',

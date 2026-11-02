@@ -16,7 +16,7 @@ setup(
     maintainer='jcjcjc0705',
     maintainer_email='jimmy910705@gmail.com',
     description='dxl_cli, dxl_debug and the board_bridge they talk to',
-    license='Proprietary',
+    license='TODO: License declaration',
     entry_points={
         'console_scripts': [
             'dxl_cli = dynamixel_tools.dxl_cli:main',

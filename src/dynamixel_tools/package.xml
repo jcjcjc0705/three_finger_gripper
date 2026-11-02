@@ -5,7 +5,7 @@
   <version>0.0.0</version>
   <description>dxl_cli, dxl_debug and the board_bridge they talk to</description>
   <maintainer email="jimmy910705@gmail.com">jcjcjc0705</maintainer>
-  <license>Proprietary</license>
+  <license>TODO: License declaration</license>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>dynamixel_msgs</exec_depend>

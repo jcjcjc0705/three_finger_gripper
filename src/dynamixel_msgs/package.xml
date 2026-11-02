@@ -5,7 +5,7 @@
   <version>0.0.0</version>
   <description>Services for reading, writing, rebooting and zeroing the motors</description>
   <maintainer email="jimmy910705@gmail.com">jcjcjc0705</maintainer>
-  <license>Proprietary</license>
+  <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>rosidl_default_generators</buildtool_depend>

@@ -5,7 +5,7 @@
   <version>0.0.0</version>
   <description>Palm camera stream from the board</description>
   <maintainer email="jimmy910705@gmail.com">jcjcjc0705</maintainer>
-  <license>Proprietary</license>
+  <license>TODO: License declaration</license>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>

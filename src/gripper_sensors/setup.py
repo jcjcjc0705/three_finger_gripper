@@ -16,7 +16,7 @@ setup(
     maintainer='jcjcjc0705',
     maintainer_email='jimmy910705@gmail.com',
     description='Palm camera stream from the board',
-    license='Proprietary',
+    license='TODO: License declaration',
     entry_points={
         'console_scripts': [
             'palm_stream = gripper_sensors.palm_stream:main',
