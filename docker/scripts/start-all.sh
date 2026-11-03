@@ -3,7 +3,7 @@
 # --dry-run: uros_node on the board keeps the torque off.
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/utils.sh"
 
-if [[ "$1" == "--dry-run" ]]; then export UROS_ARGS=--dry-run; shift; fi
+if [[ "$1" == "--dry-run" ]]; then export UROS_ARGS="--dry-run ${UROS_ARGS:-}"; shift; fi
 
 # include: gives no useful service order, so say which one to land in.
 export COMPOSE_MAIN_SERVICE=gripper

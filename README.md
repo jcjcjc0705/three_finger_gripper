@@ -127,8 +127,8 @@ Any other argument goes to `docker compose`:
 | `docker/scripts/gripper.sh debug` | An idle container of that service, to build or run tools in |
 
 `UROS_ARGS` passes options to `uros_node`, such as
-`UROS_ARGS="--band-mm 60" docker/scripts/start-all.sh`. See the
-[firmware README](firmware_ns02501/README.md#uros_node) for the options.
+`UROS_ARGS="--band-mm 60" docker/scripts/start-all.sh`. `--dry-run` is added to them. See
+the [firmware README](firmware_ns02501/README.md#uros_node) for the options.
 
 ---
 
@@ -331,6 +331,8 @@ ros2 launch three_finger_gripper_description view_robot.launch.py
 | `/gripper/goal` | `std_msgs/Float32MultiArray` | 10 Hz | 8 positions (rad), 8 current ceilings, then 1 if a goal is active |
 | `/gripper/joint_states` | `sensor_msgs/JointState` | 25 Hz | From the board. `effort` is Present Current in register units |
 | `/gripper/motor_diag` | `std_msgs/Float32MultiArray` | 2 Hz | Per joint: temperature, voltage, hardware error, torque |
+| `/gripper/motor_cmd` | `std_msgs/String` | in | Motor requests from `board_bridge`, as text. The format is in [motor_debug.hpp](firmware_ns02501/src/motor_debug.hpp) |
+| `/gripper/motor_reply` | `std_msgs/String` | on request | The replies |
 | `/tof/range` | `sensor_msgs/Range` | 30 Hz | `+inf` when the sensor could not measure |
 | `/joint_states`, `/tf` | | 25 Hz | From `gripper_state` |
 | `/dynamic_joint_states` | `control_msgs/DynamicJointState` | 2 Hz | `/gripper/motor_diag` with names |
